@@ -29,3 +29,16 @@ def test_m2_cache_gate_not_cheaper_than_no_gate():
     # bỏ chiết khấu cache ở nơi không đáng thì chi phí chỉ có thể bằng hoặc cao hơn
     assert r["optimized_daily_no_gate"] <= r["optimized_daily"] + 1e-6
     assert 60 <= r["savings_pct"] <= 95
+
+
+def test_reasoning_budget_shares_and_scenarios():
+    rs = m2_inference_levers.run(verbose=False)["reasoning"]
+    # reasoning chiếm ít traffic nhưng nhiều chi phí hơn, và nhiều năng lượng hơn nữa
+    assert rs["traffic_share"] < rs["cost_share"] < rs["energy_share"]
+    assert 0 < rs["traffic_share"] < 1
+    # trần 10% lớn hơn tỷ lệ hiện tại -> không tiết kiệm; trần càng chặt tiết kiệm càng nhiều
+    saved = [s["saved_usd"] for s in rs["scenarios"]]
+    assert saved[0] == 0.0
+    assert saved == sorted(saved)
+    wh = [s["saved_wh"] for s in rs["scenarios"]]
+    assert wh == sorted(wh) and wh[-1] > 0
