@@ -78,6 +78,40 @@ def optimized_request_cost(r, out_tokens, reads_by_group, write_cost) -> float:
     )
 
 
+def lever_breakdown(rows, opt_cost_all: float) -> list:
+    """Chi phí/ngày và $/1M-token khi bật TỪNG đòn bẩy riêng lẻ (so với baseline: model lớn, không cache, không batch).
+
+    Các đòn bẩy nhân vào nhau nên phần tiết kiệm riêng lẻ KHÔNG cộng lại bằng mức tiết kiệm khi bật cả ba.
+    Dòng "cả ba" lấy đúng chi phí tối ưu của mission (đã có cache_is_worth_it); cache riêng lẻ ở đây chưa lọc điều kiện.
+    """
+    def total(cascade: bool, cache: bool, batch: bool) -> float:
+        usd = 0.0
+        for r in rows:
+            inp, out = int(num(r["input_tokens"])), int(num(r["output_tokens"]))
+            pin, pout = MODEL_PRICES[r["route_tier"] if cascade else "large"]
+            usd += pricing.request_cost(
+                inp, out, pin, pout,
+                cached_in=int(num(r["cached_input_tokens"])) if cache else 0,
+                batch=bool(int(num(r["is_batch"]))) if batch else False,
+            )
+        return usd
+
+    tokens = sum(int(num(r["input_tokens"])) + int(num(r["output_tokens"])) for r in rows)
+    base = total(False, False, False)
+    scenarios = [
+        ("Baseline (model lớn, không cache, không batch)", base),
+        ("Chỉ cascade", total(True, False, False)),
+        ("Chỉ prompt cache", total(False, True, False)),
+        ("Chỉ batch", total(False, False, True)),
+        ("Cả ba (có cache_is_worth_it)", opt_cost_all),
+    ]
+    return [
+        {"name": name, "usd_per_day": usd, "usd_per_m": pricing.dollars_per_million(usd, tokens),
+         "savings_pct": (1 - usd / base) * 100 if base else 0.0}
+        for name, usd in scenarios
+    ]
+
+
 def analyze_reasoning(rows, reads_by_group, write_cost) -> dict:
     """Ext 4: tách $ và Wh của traffic reasoning, rồi mô phỏng việc giới hạn reasoning.
 
@@ -203,6 +237,7 @@ def run(verbose: bool = True) -> dict:
         }
 
     reasoning = analyze_reasoning(rows, reads_by_group, write_cost)
+    levers = lever_breakdown(rows, opt_cost)
 
     if verbose:
         print("== M2 Inference Cost Levers ==")
@@ -210,6 +245,11 @@ def run(verbose: bool = True) -> dict:
         print(f"baseline  : ${base_cost:,.2f}/day   ${base_pm:.3f}/1M-token")
         print(f"optimized : ${opt_cost:,.2f}/day   ${opt_pm:.3f}/1M-token")
         print(f"savings   : {savings_pct:.1f}%  (cascade + caching + batch)")
+        print("\nĐóng góp từng đòn bẩy (bật riêng lẻ):")
+        print(f"{'kịch bản':48}{'$/ngày':>9}{'$/1M-token':>12}{'tiết kiệm':>11}")
+        for lv in levers:
+            print(f"{lv['name']:48}{lv['usd_per_day']:>9.2f}{lv['usd_per_m']:>12.3f}{lv['savings_pct']:>10.1f}%")
+        print()
         print(
             f"discount stack (batch + 100% cache): {pricing.discount_stack(batch=True, cache_hit_frac=1.0):.3f} of naive"
         )
@@ -276,7 +316,7 @@ def run(verbose: bool = True) -> dict:
         "optimized_daily_no_gate": round(opt_cost_no_gate, 4),
         "cache_stats": cache_stats,
         "cache_skipped_requests": skipped_requests,
-        "reasoning": reasoning,
+        "reasoning": reasoning, "levers": levers,
     }
 
 

@@ -1,0 +1,8 @@
+== M4 Cost Allocation ==
+cost by team ($/day):
+  assistant    $    2.59
+  search       $    2.49
+  eval         $    1.79
+  rag          $    1.60
+tag coverage: 92%  ->  chargeback ready? True
+FOCUS export -> outputs/focus_export.csv (50 rows)

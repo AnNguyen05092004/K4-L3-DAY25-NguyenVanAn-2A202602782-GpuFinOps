@@ -1,0 +1,47 @@
+== M3 Purchasing Strategy ==
+break-even utilization @ 45% reserved discount = 55%
+job               gpu    tier          on-demand   optimized
+job-train-llm     H100   spot       $     12,000$      7,596
+job-train-embed   A100   spot       $      2,148$      1,393
+job-finetune      H100   spot       $        900$        570
+job-infer-chat    A10G   reserved   $      4,320$      2,592
+job-infer-rag     A100   reserved   $      3,866$      2,160
+job-infer-search  L4     reserved   $      1,728$        972
+job-dev-sandbox   A10G   spot       $        480$        203
+job-batch-eval    H100   spot       $        225$        142
+
+monthly: on-demand $25,667 -> optimized $15,627  (39.1% saved)
+
+== Ext 1: chính sách mua nâng cao ==
+(1) M3 gốc (cứng 30 ngày, reserved tính theo giờ dùng): $25,667 -> $15,627  (39.1%)
+(2) Quy tắc cũ, tính tiền đúng (cột days, reserved trả 24/7): $16,539 -> $10,173  (38.5%)
+(3) Chính sách mới (thu hồi theo GPU, 1yr vs 3yr, days)    : $16,539 -> $10,139  (38.7%)
+
+job               gpu    tier cũ       tier mới        on-demand   cũ ($)  mới ($)
+job-train-llm     H100   spot          spot                5,600    3,545    3,511
+job-train-embed   A100   spot          spot                  358      232      232
+job-finetune      H100   spot          spot                   90       57       56
+job-infer-chat    A10G   reserved-3yr  reserved-3yr        4,320    2,592    2,592
+job-infer-rag     A100   reserved-3yr  reserved-3yr        3,866    2,160    2,160
+job-infer-search  L4     reserved-3yr  reserved-3yr        1,728    1,296    1,296
+job-dev-sandbox   A10G   spot          spot                  352      149      151
+job-batch-eval    H100   spot          spot                  225      142      141
+
+Ma trận khuyến nghị (hàng = GPU/interruptible, cột = duty cycle; OD = on-demand, R1/R3 = reserved 1/3 năm; * = khác quy tắc cũ):
+GPU      ngắt được    10%    25%    40%    55%    70%    85%   100%
+H100         không     OD     OD     OD    OD*     R3     R3     R3
+H100            có   SPOT   SPOT   SPOT   SPOT   SPOT   SPOT     R3
+A100         không     OD     OD     OD    OD*     R3     R3     R3
+A100            có   SPOT   SPOT   SPOT   SPOT   SPOT   SPOT     R3
+A10G         không     OD     OD     OD    OD*     R3     R3     R3
+A10G            có   SPOT   SPOT   SPOT   SPOT   SPOT   SPOT  SPOT*
+L4           không     OD     OD     OD    OD*     R3     R3     R3
+L4              có   SPOT   SPOT   SPOT   SPOT   SPOT   SPOT  SPOT*
+Số ô khác quy tắc cũ: 6/56
+
+Gói mua thay đổi theo vòng đời workload (tháng):
+job               gpu              6 th         12 th         24 th         36 th
+job-infer-chat    A10G        on_demand  reserved-1yr  reserved-1yr  reserved-3yr
+job-infer-rag     A100        on_demand  reserved-1yr  reserved-1yr  reserved-3yr
+job-infer-search  L4          on_demand  reserved-1yr  reserved-1yr  reserved-3yr
+job-batch-eval    H100             spot          spot          spot          spot

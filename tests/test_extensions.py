@@ -137,3 +137,15 @@ def test_m3_keeps_original_result_and_adds_improved_comparison():
     imp = r["improved"]
     assert imp["old_cost"] < imp["on_demand"] and imp["new_cost"] < imp["on_demand"]
     assert len(r["tier_matrix"]["matrix"]) == 8
+
+
+def test_generated_report_has_required_sections():
+    from missions import m5_report
+    m5_report.run(verbose=False)
+    with open(os.path.join(ROOT, "outputs", "report.md"), encoding="utf-8") as f:
+        md = f.read()
+    for needle in ("Baseline spend", "Savings by lever", "$/1M-token", "Cheapest region",
+                   "Cleanest region", "GPU-Util", "Khuyến nghị theo thứ tự ưu tiên", "Phần mở rộng"):
+        assert needle in md, needle
+    assert "Cheapest+cleanest" not in md          # nhãn cũ bị sai đã được thay bằng 3 tiêu chí tách riêng
+    assert os.path.exists(os.path.join(ROOT, "outputs", "savings.png"))

@@ -1,0 +1,21 @@
+== Ext 5: Carbon-aware scheduling ==
+job               GPU      GPU-giờ      kWh  CO2@us-east-1 (kg)  CO2@europe-north1 (kg)  tiết kiệm
+job-train-llm     H100        2240   1568.0               595.8                    47.0      548.8
+job-train-embed   A100         200     80.0                30.4                     2.4       28.0
+job-finetune      H100          36     25.2                 9.6                     0.8        8.8
+job-dev-sandbox   A10G         352     52.8                20.1                     1.6       18.5
+job-batch-eval    H100          90     63.0                23.9                     1.9       22.1
+
+Tổng: 1,789 kWh  |  carbon 679.8 kg -> 53.7 kg  (tiết kiệm 626.2 kg CO2e = 92%)
+
+So sánh 5 vùng cho 1,789 kWh (giá carbon nội bộ $100/tấn):
+vùng                $/kWh  gCO2/kWh  tiền điện $  CO2 (kg)   tổng $  nhãn
+us-east-wa          0.055        90        98.39     161.0   114.50  rẻ nhất, cân bằng
+us-west-2           0.070       120       125.23     214.7   146.70  
+europe-north1       0.090        30       161.01      53.7   166.38  sạch nhất
+us-east-1           0.120       380       214.68     679.8   282.66  
+europe-central2     0.180       660       322.02    1180.7   440.09  
+
+Rẻ nhất: us-east-wa | Sạch nhất: europe-north1 | Cân bằng: us-east-wa
+Chuyển us-east-1 -> us-east-wa: tiền điện $214.68 -> $98.39, carbon 679.8 -> 161.0 kg
+europe-north1 chỉ thắng us-east-wa khi giá carbon > $583/tấn

@@ -1,0 +1,19 @@
+Generated: price_catalog.csv, gpu_telemetry.csv, token_usage.csv, workloads.csv
+
+============================================================
+  LAB 25 VERIFY
+============================================================
+  [PASS] M1 flags the GPU-Util lie (gpu-h100-4)  (['gpu-h100-4', 'gpu-a10g-1'])
+  [PASS] M1 detects idle waste  ($20.0/day)
+  [PASS] M2 $/1M-token drops after optimization  (6.488 -> 1.128)
+  [PASS] M2 inference savings in 60-95% band  (82.6%)
+  [PASS] M3 recommends a spot tier  ({'spot', 'reserved'})
+  [PASS] M3 recommends a reserved tier  ({'spot', 'reserved'})
+  [PASS] M3 purchasing saves money  (39.1%)
+  [PASS] M4 tag coverage 85-100%  (92%)
+  [PASS] M4 chargeback gate is open  (True)
+  [PASS] M5 total savings in 40-95% band  (46.1%)
+  [PASS] M5 report.md written
+------------------------------------------------------------
+  11/11 checks passed
+============================================================

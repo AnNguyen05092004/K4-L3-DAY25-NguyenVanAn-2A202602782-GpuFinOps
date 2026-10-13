@@ -1,0 +1,37 @@
+== M2 Inference Cost Levers ==
+requests=2400  tokens=7,533,027
+baseline  : $48.87/day   $6.488/1M-token
+optimized : $8.50/day   $1.128/1M-token
+savings   : 82.6%  (cascade + caching + batch)
+
+Đóng góp từng đòn bẩy (bật riêng lẻ):
+kịch bản                                           $/ngày  $/1M-token  tiết kiệm
+Baseline (model lớn, không cache, không batch)      48.87       6.488       0.0%
+Chỉ cascade                                         11.48       1.523      76.5%
+Chỉ prompt cache                                    44.27       5.877       9.4%
+Chỉ batch                                           40.64       5.394      16.9%
+Cả ba (có cache_is_worth_it)                         8.50       1.128      82.6%
+
+discount stack (batch + 100% cache): 0.050 of naive
+
+== Ext 3: cache_is_worth_it ==
+tier     giá in  write_cost   hòa vốn   đọc TB   nhóm đạt
+small     $0.20         1.5     1.667    18.81      96/96
+large     $3.00         0.1     0.111     4.24      91/95
+(tham chiếu kiểu Anthropic, phụ phí ghi 25%: hòa vốn 0.28 lần đọc, mọi tier như nhau)
+request bị bỏ chiết khấu cache: 4/2400
+chi phí/ngày: luôn tính cache $8.4846 -> chỉ khi đáng $8.4959  (+$0.0113)
+
+== Ext 4: ngân sách reasoning ==
+nhóm         request  %traffic   $/ngày  %chi phí   Wh/ngày  %năng lượng   Wh/req
+thường          2199     91.6%     7.10     83.6%    1887.6         6.0%     0.86
+reasoning        201      8.4%     1.40     16.4%   29787.7        94.0%   148.20
+1 request reasoning đắt gấp 2.2x về $ và gấp 173x về Wh so với request thường
+
+Giới hạn (cap) reasoning theo % tổng traffic, phần vượt trần bị hạ cấp thành request thường:
+  trần   giữ lại   tiết kiệm $/ngày     (%)   tiết kiệm Wh/ngày     (%)
+   10%      100%             0.0000    0.0%                 0.0    0.0%
+    5%       60%             0.4142    4.9%             11932.4   37.7%
+    2%       24%             0.7825    9.2%             22539.1   71.2%
+    1%       12%             0.9052   10.7%             26074.6   82.3%
+(hiện reasoning chiếm 8.4% traffic nên trần 10% chưa có tác dụng)

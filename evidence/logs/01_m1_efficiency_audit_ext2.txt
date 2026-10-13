@@ -1,0 +1,47 @@
+== M1 Efficiency Audit ==
+GPU           type     util%    MFU    MBU  idle_h
+gpu-h100-4    H100      98.2  0.194  0.207       0
+gpu-a10g-0    A10G      25.0  0.218  0.235       0
+gpu-a100-1    A100      28.0  0.236  0.247       0
+gpu-a100-0    A100      31.4  0.259  0.276       0
+gpu-h100-5    H100      61.1  0.261  0.271       8
+gpu-a10g-1    A10G      96.9  0.268  0.302       0
+gpu-l4-0      L4        40.0  0.302  0.328       0
+gpu-h100-2    H100      94.3  0.401  0.423       0
+gpu-h100-1    H100      95.2  0.408   0.44       0
+gpu-h100-0    H100      94.4  0.417  0.446       0
+gpu-h100-3    H100      93.1  0.427  0.444       0
+
+GPU-Util LIES (util>=90% but MFU<30%): ['gpu-h100-4', 'gpu-a10g-1']
+Idle waste (1 day): $20.00  ->  $600/month
+
+== Ext 2: Right-sizing theo băng thông (MBU) và VRAM ==
+Bảng giá theo dung lượng và băng thông (catalog):
+GPU       $/giờ  VRAM GB  $/GB-VRAM  BW TB/s  $/(TB/s)
+MI300X     1.95      192     0.0102     5.30      0.37
+A100       1.79       80     0.0224     2.00      0.90
+B200       5.09      192     0.0265     8.00      0.64
+H200       3.95      141     0.0280     4.80      0.82
+H100       2.50       80     0.0312     3.35      0.75
+L4         0.80       24     0.0333     0.30      2.67
+A10G       1.00       24     0.0417     0.60      1.67
+
+Nhu cầu ĐỈNH 24h của từng GPU; GPU mới phải chạy ≤ 70% công suất đỉnh, VRAM ≤ 90%.
+(✗ = bị loại: TF = thiếu TFLOPs, BW = thiếu băng thông, VRAM = thiếu dung lượng)
+GPU         type     TFLOPs    BW  VRAM  đề xuất    tiết kiệm/tháng  các GPU rẻ hơn đã xét
+gpu-a100-0  A100         90  0.71    68  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM
+gpu-a100-1  A100         83  0.68    67  giữ nguyên                -  L4✗BW+VRAM A10G✗BW+VRAM
+gpu-a10g-0  A10G         31  0.18    20  L4              $144 (20%)  L4✓
+gpu-a10g-1  A10G         37  0.21    20  giữ nguyên                -  L4✗BW
+gpu-h100-0  H100        443  1.75    68  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM A100✗TF+BW | MI300X✓(AMD)
+gpu-h100-1  H100        435  1.78    68  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM A100✗TF+BW | MI300X✓(AMD)
+gpu-h100-2  H100        422  1.75    67  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM A100✗TF+BW | MI300X✓(AMD)
+gpu-h100-3  H100        450  1.75    68  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM A100✗TF+BW | MI300X✓(AMD)
+gpu-h100-4  H100        226  0.91    67  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM A100✗TF | MI300X✓(AMD)
+gpu-h100-5  H100        404  1.54    66  giữ nguyên                -  L4✗TF+BW+VRAM A10G✗TF+BW+VRAM A100✗TF+BW | MI300X✓(AMD)
+gpu-l4-0    L4           40  0.12    20  giữ nguyên                -  
+
+Right-size (chỉ NVIDIA): tiết kiệm $144/tháng = 0.9% chi phí đội GPU ($15,394/tháng)
+Nếu chấp nhận đổi sang AMD MI300X: tiết kiệm $2,520/tháng = 16.4% (cần chuyển stack phần mềm)
+GPU 'lie' gpu-h100-4 (H100): KHÔNG hạ cấp được — bị loại: L4 compute+bandwidth+VRAM; A10G compute+bandwidth+VRAM; A100 compute
+GPU 'lie' gpu-a10g-1 (A10G): KHÔNG hạ cấp được — bị loại: L4 bandwidth
