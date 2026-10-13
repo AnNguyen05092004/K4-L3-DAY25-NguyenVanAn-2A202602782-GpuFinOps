@@ -56,3 +56,41 @@ def test_region_picks_and_carbon_scheduling():
     r = m3_carbon_aware.run(verbose=False)
     assert len(r["jobs"]) == 5 and r["co2_saved_kg"] > 0
     assert r["cleanest_co2_kg"] < r["baseline_co2_kg"]
+
+
+def test_rightsize_checks_bandwidth_and_vram_not_just_price():
+    from missions import m1_efficiency_audit as m1
+    from missions._common import catalog_by_type
+    cat = catalog_by_type()
+    # nhu cầu rất nhỏ -> GPU rẻ nhất (L4) là đủ
+    small = {"tflops": 10, "bw_tbs": 0.05, "mem_gb": 5}
+    pick, _ = m1.recommend_rightsize(small, "H100", cat)
+    assert pick["gpu_type"] == "L4"
+    # cần băng thông 0.5 TB/s: L4 (0.3) và A10G (0.6 nhưng phải ≤ 70%) bị loại -> chọn A100
+    need_bw = {"tflops": 10, "bw_tbs": 0.5, "mem_gb": 5}
+    pick, options = m1.recommend_rightsize(need_bw, "H100", cat)
+    assert pick["gpu_type"] == "A100"
+    assert all("bandwidth" in o["blocked_by"] for o in options if o["gpu_type"] in ("L4", "A10G"))
+    # cần 60 GB VRAM: A10G/L4 (24 GB) bị loại vì VRAM
+    need_vram = {"tflops": 10, "bw_tbs": 0.05, "mem_gb": 60}
+    pick, _ = m1.recommend_rightsize(need_vram, "H100", cat)
+    assert pick["gpu_type"] == "A100"
+
+
+def test_rightsize_amd_only_when_allowed_and_no_downgrade_when_blocked():
+    from missions import m1_efficiency_audit as m1
+    from missions._common import catalog_by_type
+    cat = catalog_by_type()
+    heavy = {"tflops": 400, "bw_tbs": 1.5, "mem_gb": 60}   # H100 train khỏe: A100 không đủ compute
+    pick, _ = m1.recommend_rightsize(heavy, "H100", cat)
+    assert pick is None                                    # giữ nguyên, không ép hạ cấp
+    pick_amd, _ = m1.recommend_rightsize(heavy, "H100", cat, allow_amd=True)
+    assert pick_amd["gpu_type"] == "MI300X"
+
+
+def test_m1_rightsizing_report_is_consistent():
+    from missions import m1_efficiency_audit as m1
+    r = m1.run(verbose=False)
+    assert len(r["rightsizing"]) == 11
+    assert r["rightsize_monthly_savings"] >= 0
+    assert r["rightsize_monthly_savings_with_amd"] >= r["rightsize_monthly_savings"]
