@@ -45,3 +45,38 @@ def tokens_per_watt(total_tokens: int, wh: float, seconds: float = 1.0) -> float
     """Energy efficiency of serving: tokens per watt (higher is better)."""
     watts = (wh * 3600.0) / seconds if seconds > 0 else 0.0
     return total_tokens / watts if watts > 0 else 0.0
+
+
+# Giá carbon nội bộ (USD / tấn CO2) — giả định minh họa để quy carbon ra tiền khi so sánh vùng.
+CARBON_PRICE_PER_TONNE = 100.0
+
+
+def region_comparison(kwh: float, carbon_price_per_tonne: float = CARBON_PRICE_PER_TONNE) -> list:
+    """Bảng so sánh mọi vùng cho cùng một lượng điện (kWh).
+
+    Mỗi dòng: giá điện, cường độ carbon, tiền điện thực tế, carbon thực tế (kg CO2),
+    và tổng chi phí đã cộng 'tiền carbon' (carbon_kg x giá carbon) để tìm vùng cân bằng.
+    """
+    rows = []
+    for region in REGION_CARBON:
+        wh = kwh * 1000.0
+        energy_usd = energy_cost_usd(wh, region)
+        co2_kg = carbon_g(wh, region) / 1000.0
+        rows.append({
+            "region": region,
+            "usd_per_kwh": REGION_PRICE_KWH[region],
+            "g_per_kwh": REGION_CARBON[region],
+            "energy_usd": energy_usd,
+            "co2_kg": co2_kg,
+            "total_usd": energy_usd + co2_kg * carbon_price_per_tonne / 1000.0,
+        })
+    return rows
+
+
+def pick_regions(rows: list) -> dict:
+    """Chọn vùng tối ưu theo 3 tiêu chí: rẻ nhất (tiền điện), sạch nhất (CO2), cân bằng (tổng gồm tiền carbon)."""
+    return {
+        "cheapest": min(rows, key=lambda r: r["energy_usd"])["region"],
+        "cleanest": min(rows, key=lambda r: r["co2_kg"])["region"],
+        "balanced": min(rows, key=lambda r: r["total_usd"])["region"],
+    }

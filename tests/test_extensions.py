@@ -42,3 +42,17 @@ def test_reasoning_budget_shares_and_scenarios():
     assert saved == sorted(saved)
     wh = [s["saved_wh"] for s in rs["scenarios"]]
     assert wh == sorted(wh) and wh[-1] > 0
+
+
+def test_region_picks_and_carbon_scheduling():
+    from finops import sustainability
+    from missions import m3_carbon_aware
+    rows = sustainability.region_comparison(1000)
+    picks = sustainability.pick_regions(rows)
+    assert picks["cheapest"] == "us-east-wa" and picks["cleanest"] == "europe-north1"
+    # giá carbon = 0 -> cân bằng trùng rẻ nhất; giá carbon rất lớn -> trùng sạch nhất
+    assert sustainability.pick_regions(sustainability.region_comparison(1000, 0.0))["balanced"] == picks["cheapest"]
+    assert sustainability.pick_regions(sustainability.region_comparison(1000, 1e6))["balanced"] == picks["cleanest"]
+    r = m3_carbon_aware.run(verbose=False)
+    assert len(r["jobs"]) == 5 and r["co2_saved_kg"] > 0
+    assert r["cleanest_co2_kg"] < r["baseline_co2_kg"]
