@@ -3,6 +3,7 @@
 Figures are June-2026 as-of snapshots from the deck's RESEARCH dossier; treat
 live prices as fast-moving (re-baseline before each cohort).
 """
+
 from __future__ import annotations
 
 
@@ -12,9 +13,9 @@ def request_cost(
     price_in_per_m: float,
     price_out_per_m: float,
     cached_in: int = 0,
-    cache_discount: float = 0.10,   # Anthropic cached-read ~0.1x (=-90%)
+    cache_discount: float = 0.10,  # Anthropic cached-read ~0.1x (=-90%)
     batch: bool = False,
-    batch_discount: float = 0.50,   # Batch API ~ -50%
+    batch_discount: float = 0.50,  # Batch API ~ -50%
 ) -> float:
     """USD cost of a single request. Cached input billed at cache_discount x price."""
     cached_in = min(max(0, cached_in), input_tok)
@@ -60,7 +61,9 @@ def break_even_utilization(discount_frac: float) -> float:
     return max(0.0, min(1.0, 1.0 - discount_frac))
 
 
-def recommend_tier(hours_per_day: float, interruptible: bool, reserved_discount: float = 0.45) -> str:
+def recommend_tier(
+    hours_per_day: float, interruptible: bool, reserved_discount: float = 0.45
+) -> str:
     """Pick a purchasing tier from a workload's duty cycle + interruptibility.
 
     DOCUMENTED simple policy (instructor extension point — swap in your own):
@@ -81,7 +84,7 @@ def spot_checkpoint_cost(
     job_hours: float,
     spot_hr: float,
     on_demand_hr: float,
-    interrupt_rate: float = 0.05,      # per-hour chance (H100 spot ~<5%)
+    interrupt_rate: float = 0.05,  # per-hour chance (H100 spot ~<5%)
     ckpt_overhead_frac: float = 0.03,  # steady cost of writing checkpoints
     rework_hours_per_interrupt: float = 0.5,
 ) -> dict:
@@ -95,10 +98,36 @@ def spot_checkpoint_cost(
     effective_hours = job_hours * (1.0 + ckpt_overhead_frac) + rework_hours
     spot_cost = effective_hours * spot_hr
     on_demand_cost = job_hours * on_demand_hr
-    savings_pct = (1.0 - spot_cost / on_demand_cost) * 100.0 if on_demand_cost > 0 else 0.0
+    savings_pct = (
+        (1.0 - spot_cost / on_demand_cost) * 100.0 if on_demand_cost > 0 else 0.0
+    )
     return {
         "spot_effective_hours": round(effective_hours, 2),
         "spot_cost": round(spot_cost, 2),
         "on_demand_cost": round(on_demand_cost, 2),
         "savings_pct": round(savings_pct, 1),
     }
+
+
+def cache_break_even_reads(write_cost: float, read_discount: float = 0.10) -> float:
+    """Số lần ĐỌC LẠI tối thiểu để một lần ghi cache bắt đầu có lời.
+
+    Đơn vị: giá input thường của model = 1.0.
+      - write_cost    : phụ phí ghi cache trả MỘT lần (0.25 = đắt hơn input thường 25%).
+      - read_discount : mỗi lần đọc từ cache chỉ trả phần này (0.10 = giảm 90%).
+    Mỗi lần đọc tiết kiệm (1 - read_discount) so với đọc input thường, nên cần
+    write_cost / (1 - read_discount) lần đọc để bù lại phụ phí ghi.
+    """
+    saving_per_read = 1.0 - read_discount
+    if (
+        saving_per_read <= 0
+    ):  # đọc cache không rẻ hơn input thường -> không bao giờ có lời
+        return float("inf")
+    return max(0.0, write_cost) / saving_per_read
+
+
+def cache_is_worth_it(
+    avg_reads: float, write_cost: float, read_discount: float = 0.10
+) -> bool:
+    """True nếu trung bình mỗi prefix được đọc lại ĐỦ NHIỀU để cache có lời (so sánh nghiêm ngặt)."""
+    return avg_reads > cache_break_even_reads(write_cost, read_discount)
