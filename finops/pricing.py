@@ -5,6 +5,7 @@ live prices as fast-moving (re-baseline before each cohort).
 """
 
 from __future__ import annotations
+import math
 
 
 def request_cost(
@@ -62,7 +63,13 @@ def break_even_utilization(discount_frac: float) -> float:
 
 
 def recommend_tier(
-    hours_per_day: float, interruptible: bool, reserved_discount: float = 0.45
+    hours_per_day: float,
+    interruptible: bool,
+    reserved_discount: float = 0.45,
+    prices: dict | None = None,
+    gpu_type: str | None = None,
+    active_days: float = 30,
+    lifetime_months: float = 36,
 ) -> str:
     """Pick a purchasing tier from a workload's duty cycle + interruptibility.
 
@@ -70,7 +77,15 @@ def recommend_tier(
       - interruptible & not 24/7  -> 'spot'      (checkpoint and ride the discount)
       - duty cycle >= break-even  -> 'reserved'  (steady, high utilization)
       - otherwise                 -> 'on_demand' (spiky / low duty)
+
+    Ext 1: nếu truyền `prices` (bảng giá của GPU đó) thì dùng chính sách NÂNG CAO —
+    chọn gói có chi phí mỗi giờ-dùng-thật thấp nhất, xét tỷ lệ bị thu hồi spot theo
+    loại GPU, duty cycle theo số ngày chạy thật, và reserved 1 năm vs 3 năm theo vòng
+    đời workload (xem best_tier). Không truyền `prices` thì giữ đúng quy tắc đơn giản cũ.
     """
+    if prices is not None:
+        return best_tier(hours_per_day, interruptible, prices, gpu_type,
+                         active_days, lifetime_months)["tier"]
     duty = max(0.0, hours_per_day) / 24.0
     be = break_even_utilization(reserved_discount)
     if interruptible and hours_per_day < 24:
@@ -131,3 +146,65 @@ def cache_is_worth_it(
 ) -> bool:
     """True nếu trung bình mỗi prefix được đọc lại ĐỦ NHIỀU để cache có lời (so sánh nghiêm ngặt)."""
     return avg_reads > cache_break_even_reads(write_cost, read_discount)
+
+
+# --- Ext 1: chính sách mua GPU nâng cao (tỷ lệ thu hồi theo GPU + reserved 1yr vs 3yr) ---
+
+# Xác suất bị thu hồi spot mỗi giờ theo loại GPU — GIẢ ĐỊNH minh họa (GPU lớn, khan hiếm
+# thường ít bị thu hồi hơn GPU nhỏ). Loại không có trong bảng dùng DEFAULT_SPOT_INTERRUPT_RATE.
+SPOT_INTERRUPT_RATE = {
+    "H100": 0.03, "H200": 0.03, "B200": 0.04, "A100": 0.05,
+    "MI300X": 0.06, "A10G": 0.08, "L4": 0.10,
+}
+DEFAULT_SPOT_INTERRUPT_RATE = 0.05
+RESERVED_TERMS = {"1yr": 12, "3yr": 36}   # kỳ hạn cam kết reserved (tháng)
+DAYS_PER_MONTH = 30
+
+
+def spot_overhead_factor(interrupt_rate: float, ckpt_overhead_frac: float = 0.03,
+                         rework_hours_per_interrupt: float = 0.5) -> float:
+    """Hệ số giờ-GPU thực tế trên mỗi giờ công việc khi chạy spot (checkpoint + chạy lại khi bị thu hồi).
+
+    Cùng công thức với spot_checkpoint_cost: 1 + overhead checkpoint + tỷ lệ thu hồi x giờ chạy lại.
+    """
+    return 1.0 + ckpt_overhead_frac + interrupt_rate * rework_hours_per_interrupt
+
+
+def reserved_effective_rate(rate_hr: float, term_months: float, lifetime_months: float) -> float:
+    """Giá reserved hiệu dụng mỗi giờ khi workload chỉ sống `lifetime_months` tháng.
+
+    Cam kết luôn phải trả đủ kỳ hạn (làm tròn lên bội số của kỳ hạn). Ví dụ workload sống 12 tháng
+    mà mua 3 năm: trả 36 tháng nhưng chỉ dùng 12 -> giá hiệu dụng gấp 3 lần giá niêm yết.
+    """
+    if lifetime_months <= 0:
+        return float("inf")
+    terms = math.ceil(lifetime_months / term_months)
+    return rate_hr * terms * term_months / lifetime_months
+
+
+def tier_options(hours_per_day: float, interruptible: bool, prices: dict, gpu_type: str | None = None,
+                 active_days: float = DAYS_PER_MONTH, lifetime_months: float = 36) -> list:
+    """Chi phí mỗi GIỜ-DÙNG-THẬT của từng gói mua có thể áp dụng cho workload.
+
+    prices cần có: on_demand_hr, spot_hr, reserved_1yr_hr, reserved_3yr_hr (số, USD/GPU-giờ).
+    Reserved bị tính tiền 24/7 nên chi phí mỗi giờ-dùng = giá hiệu dụng / duty cycle
+    (duty cycle = giờ dùng thật trong tháng / tổng giờ trong tháng).
+    """
+    duty = min(1.0, max(0.0, hours_per_day) * max(0.0, active_days) / (24.0 * DAYS_PER_MONTH))
+    options = [{"tier": "on_demand", "term": None, "cost_per_used_hr": prices["on_demand_hr"]}]
+    if interruptible:
+        rate = SPOT_INTERRUPT_RATE.get(gpu_type, DEFAULT_SPOT_INTERRUPT_RATE)
+        options.append({"tier": "spot", "term": None,
+                        "cost_per_used_hr": prices["spot_hr"] * spot_overhead_factor(rate)})
+    if duty > 0:
+        for term, months in RESERVED_TERMS.items():
+            eff = reserved_effective_rate(prices[f"reserved_{term}_hr"], months, lifetime_months)
+            options.append({"tier": "reserved", "term": term, "cost_per_used_hr": eff / duty})
+    return options
+
+
+def best_tier(hours_per_day: float, interruptible: bool, prices: dict, gpu_type: str | None = None,
+              active_days: float = DAYS_PER_MONTH, lifetime_months: float = 36) -> dict:
+    """Gói mua rẻ nhất mỗi giờ-dùng-thật: {'tier', 'term', 'cost_per_used_hr'} (hòa thì ưu tiên on_demand)."""
+    options = tier_options(hours_per_day, interruptible, prices, gpu_type, active_days, lifetime_months)
+    return min(options, key=lambda o: o["cost_per_used_hr"])

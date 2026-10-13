@@ -94,3 +94,46 @@ def test_m1_rightsizing_report_is_consistent():
     assert len(r["rightsizing"]) == 11
     assert r["rightsize_monthly_savings"] >= 0
     assert r["rightsize_monthly_savings_with_amd"] >= r["rightsize_monthly_savings"]
+
+
+def _prices(gpu_type):
+    from missions import m3_purchasing
+    from missions._common import catalog_by_type
+    return m3_purchasing._prices(catalog_by_type()[gpu_type])
+
+
+def test_recommend_tier_advanced_matches_simple_rule_on_basic_cases():
+    h100 = _prices("H100")
+    assert pricing.recommend_tier(2, True, prices=h100, gpu_type="H100") == "spot"
+    assert pricing.recommend_tier(24, False, prices=h100, gpu_type="H100") == "reserved"
+    assert pricing.recommend_tier(4, False, prices=h100, gpu_type="H100") == "on_demand"
+
+
+def test_reserved_effective_rate_counts_unused_commitment():
+    assert pricing.reserved_effective_rate(1.0, 36, 36) == 1.0      # dùng đủ kỳ hạn -> đúng giá niêm yết
+    assert pricing.reserved_effective_rate(1.0, 36, 12) == 3.0      # mua 3 năm, chỉ dùng 1 năm -> đắt gấp 3
+    assert pricing.reserved_effective_rate(1.0, 12, 24) == 1.0      # 2 kỳ 1 năm vừa khít 24 tháng
+
+
+def test_best_tier_switches_term_with_lifetime():
+    a100 = _prices("A100")
+    assert pricing.best_tier(24, False, a100, "A100", 30, 36)["term"] == "3yr"
+    assert pricing.best_tier(24, False, a100, "A100", 30, 12)["term"] == "1yr"
+    assert pricing.best_tier(24, False, a100, "A100", 30, 6)["tier"] == "on_demand"
+
+
+def test_spot_interrupt_rate_depends_on_gpu_type():
+    assert pricing.spot_overhead_factor(0.03) < pricing.spot_overhead_factor(0.08)
+    # H100 24/7 ngắt được: reserved 3 năm rẻ hơn spot (spot còn gánh phí checkpoint); A10G thì ngược lại
+    assert pricing.best_tier(24, True, _prices("H100"), "H100")["tier"] == "reserved"
+    assert pricing.best_tier(24, True, _prices("A10G"), "A10G")["tier"] == "spot"
+
+
+def test_m3_keeps_original_result_and_adds_improved_comparison():
+    from missions import m3_purchasing
+    r = m3_purchasing.run(verbose=False)
+    assert {"spot", "reserved"} <= {x["tier"] for x in r["recommendations"]}   # verify.py vẫn đúng
+    assert r["savings_pct"] > 0
+    imp = r["improved"]
+    assert imp["old_cost"] < imp["on_demand"] and imp["new_cost"] < imp["on_demand"]
+    assert len(r["tier_matrix"]["matrix"]) == 8
